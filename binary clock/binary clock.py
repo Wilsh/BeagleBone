@@ -58,8 +58,8 @@ second = time[2]
 try:
 	while True:
 		displayTime(hour, minute, second)
-		#resync time at 03:59:59
-		if(hour == 3 and minute == 59 and second == 59):
+		#resync time each hour
+		if(minute == 59 and second == 59):
 			time = getTime()
 			hour =  time[0]
 			minute = time[1]
@@ -76,6 +76,6 @@ try:
 					hour += 1
 				else:
 					hour = 0
-		sleep(1)
+		sleep(0.9921)
 finally:
 	GPIO.cleanup()
