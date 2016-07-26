@@ -1,0 +1,10 @@
+This chart shows the pinout locations for the clock (positive voltage).
+Resistor values will vary depending on the LED type used in each position.
+
+    hour    minute   second
+32          P9_16    P8_16
+16  P9_42   P9_15    P8_15
+8   P9_41   P9_14    P8_14
+4   P9_30   P8_19    P8_13
+2   P9_27   P8_18    P8_12
+1   P9_23   P8_17    P8_11
