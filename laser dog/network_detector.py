@@ -25,7 +25,8 @@ import time, socket, threading
 
 HOST = '10.0.0.8'
 PORT = 24680
-LED_status = "white"
+LED_status = 'white'
+KILLTHREADS = False
 
 WARNTIME = 60*15
 
@@ -44,13 +45,24 @@ GPIO.setup(actCircuit, GPIO.IN)
 class AcceptClients(threading.Thread):
     '''Create a new thread to accept incoming client connections
     '''
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        
     def run(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((HOST, PORT))
-        s.listen()
-        while True:
-            client, addr = s.accept()
-            HandleClient(client, addr).start()
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.bind((HOST, PORT))
+        self.s.listen(5)
+        try:
+            while True:
+                if KILLTHREADS:
+                    self.s.close()
+                    break
+                self.client, self.addr = self.s.accept()
+                HandleClient(self.client, self.addr).start()
+        except socket.error:
+            print "Socket error in AcceptClients"
+            self.s.close()
 
 class HandleClient(threading.Thread):
     '''Create a new thread to handle the given client connection
@@ -62,86 +74,85 @@ class HandleClient(threading.Thread):
         
     def run(self):
         while True:
+            if KILLTHREADS:
+                break
             try:
                 self.client.sendall(LED_status.encode('utf-8'))
                 time.sleep(1)
                 self.data = self.client.recv(1024)
                 if not self.data:
                     break
-            except ConnectionResetError:
-                print("ConnectionResetError")
-                break
-            except BrokenPipeError:
-                print("BrokenPipeError")
+            except socket.error as msg:
+                print "Socket error: %s" % msg
                 break
         self.client.close()
 
 #begin LED sequence and collect IR sensor input 
 #yellowSeconds are seconds after which to turn on yellow LED
 def activated(yellowSeconds):
-	yellowOff = True
-	baseTime = time.time()
-	GPIO.output(greenLED, GPIO.HIGH)
-	if yellowSeconds == WARNTIME:
-		print getTime() + "Ammy is going out"
-	while GPIO.input(actCircuit): 
-		timePassed = time.time() - baseTime
-		if yellowOff and (timePassed > yellowSeconds):
-			yellowOff = False
-			GPIO.output(yellowLED, GPIO.HIGH)
-			print getTime() + "Ammy has been out for " + str(WARNTIME/60) + " minutes"
-        
-		#IR sensor drops to 0V when activated
-		if GPIO.input(irSensor):
-			GPIO.output(redLED, GPIO.LOW)
-		else:
-			GPIO.output(redLED, GPIO.HIGH)
+    global LED_status
+    yellowOff = True
+    baseTime = time.time()
+    GPIO.output(greenLED, GPIO.HIGH)
+    if yellowSeconds == WARNTIME:
+        print getTime() + "Ammy is going out"
+    while GPIO.input(actCircuit): 
+        timePassed = int(time.time() - baseTime)
+        if yellowOff and (timePassed > yellowSeconds):
+            yellowOff = False
+            GPIO.output(yellowLED, GPIO.HIGH)
+            print getTime() + "Ammy has been out for " + str(WARNTIME/60) + " minutes"
+        #IR sensor drops to 0V when activated
+        if GPIO.input(irSensor):
+            GPIO.output(redLED, GPIO.LOW)
+        else:
+            GPIO.output(redLED, GPIO.HIGH)
             #opening the door triggers the proximity sensor, so wait a bit
-			if timePassed > 20:
-				print getTime() + "Ammy is waiting to come in"
-        
+            if timePassed > 20:
+                print getTime() + "Ammy is waiting to come in"
         #determine color to send over network
         if not GPIO.input(irSensor) and timePassed > 20:
             #red LED takes precedence
-            LED_status = "red"
+            LED_status = 'red'
         elif timePassed > yellowSeconds:
-            LED_status = "yellow"
+            LED_status = 'yellow'
         else:
-            LED_status = "green"
-        
-		time.sleep(1)
-	return int(time.time() - baseTime)
+            LED_status = 'green'
+        time.sleep(1)
+    return int(time.time() - baseTime)
 
 #system deactivated; turn off LEDs
 def standby():
-	GPIO.output(redLED, GPIO.LOW)
-	GPIO.output(yellowLED, GPIO.LOW)
-	GPIO.output(greenLED, GPIO.LOW)
+    GPIO.output(redLED, GPIO.LOW)
+    GPIO.output(yellowLED, GPIO.LOW)
+    GPIO.output(greenLED, GPIO.LOW)
 
 #return time as formatted string "day hr:min:sec "
 def getTime():
-	return time.strftime("%a %H:%M:%S ", time.localtime())
+    return time.strftime("%a %H:%M:%S ", time.localtime())
 
 try:
     AcceptClients().start()
-	print "Laser Dog System activated"
-	recentlyActivated = False
-	elapsedTime = 0
-	resetCounter = 20
-	while True:
-		if GPIO.input(actCircuit):
-			elapsedTime = activated(WARNTIME - elapsedTime)
-			standby()
-			recentlyActivated = True
-		if recentlyActivated:
-			if resetCounter > 0:
-				resetCounter -= 1
-			else:
-				recentlyActivated = False
-				elapsedTime = 0
-				resetCounter = 20
-				print getTime() + "Ammy is in"
-                LED_status = "white"
-		time.sleep(1)
+    print "Laser Dog System activated"
+    recentlyActivated = False
+    elapsedTime = 0
+    resetCounter = 20
+    while True:
+        if GPIO.input(actCircuit):
+            elapsedTime = activated(WARNTIME - elapsedTime)
+            standby()
+            recentlyActivated = True
+        if recentlyActivated:
+            if resetCounter > 0:
+                resetCounter -= 1
+            else:
+                recentlyActivated = False
+                elapsedTime = 0
+                resetCounter = 20
+                print getTime() + "Ammy is in"
+                LED_status = 'white'
+        time.sleep(1)
+except KeyboardInterrupt:
+    KILLTHREADS = True
 finally:
-	GPIO.cleanup()
+    GPIO.cleanup()
